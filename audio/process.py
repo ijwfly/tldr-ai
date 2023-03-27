@@ -6,7 +6,8 @@ from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
 MIN_SILENCE_LEN = 2000  # ms
-SILENCE_THRESHOLD = -30  # dBFS
+SILENCE_THRESHOLD = -50  # dBFS
+
 
 
 @dataclasses.dataclass
@@ -17,7 +18,7 @@ class SegmentInfo:
     end_time: int
 
 
-def split_on_silence(audio_segment, min_silence_len=1000, silence_thresh=-16, keep_silence=300, seek_step=1):
+def split_on_silence(audio_segment, min_silence_len=1000, silence_thresh=-16, keep_silence=300, seek_step=20):
     # from the itertools documentation
     def pairwise(iterable):
         "s -> (s0,s1), (s1,s2), (s2, s3), ..."
@@ -54,19 +55,21 @@ def split_on_silence(audio_segment, min_silence_len=1000, silence_thresh=-16, ke
 
 
 def split_file_to_segments(input_file, output_folder, output_file_prefix, min_silence_len=MIN_SILENCE_LEN, silence_thresh=SILENCE_THRESHOLD):
+    print(f'Splitting file', input_file)
     audio = AudioSegment.from_file(input_file)
     voice_segments = split_on_silence(audio, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
 
-    output_segments = []
-    for i, segment in enumerate(voice_segments):
-        output_segments.append(segment)
-
     filenames_with_timings = []
-    for i, segment in enumerate(output_segments):
+    for i, segment in enumerate(voice_segments):
         start_time_ms, end_time_ms, audio_segment = segment
-        output_filename = f"{output_file_prefix}_{i + 1}_{start_time_ms:08d}-{end_time_ms:08d}.wav"
+
+        if len(segment) < 2000 and audio_segment.dBFS < -34:
+            # skip short segments with low dBFS
+            continue
+
+        output_filename = f"{output_file_prefix}_{i + 1}_{start_time_ms:08d}-{end_time_ms:08d}.mp3"
         output_filename = os.path.join(output_folder, output_filename)
-        audio_segment.export(output_filename, format="wav")
+        audio_segment.export(output_filename, format="mp3", bitrate='128k')
         filenames_with_timings.append((output_filename, start_time_ms, end_time_ms))
         print(f"Saved {output_filename}")
 

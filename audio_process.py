@@ -47,14 +47,24 @@ if __name__ == '__main__':
     # sort by start time
     segment_infos = sorted(segment_infos, key=lambda x: x.start_time)
 
+    # calculate length of full recording
+    full_recording_length = 0
+    for segment_info in segment_infos:
+        full_recording_length += segment_info.end_time - segment_info.start_time
+    print(f"Full recording length: {full_recording_length / 1000} seconds")
+    print("Est. transcription cost: $", full_recording_length / 1000 / 60 * 0.006)
+
     result_text = ''
     # prompt_text used as prompt to increase accuracy
     prompt_text = f'{RECORDING_CONTEXT}\n' if len(RECORDING_CONTEXT) > 0 else ''
     for segment_info in segment_infos:
         print(f'Processing {segment_info.filename}')
         text = get_audio_speech_to_text(segment_info.filename, prompt_text, RECORDING_LANGUAGE)
+        if len(text) == 0:
+            continue
         result_text += f'{segment_info.nickname}: {text}\n'
-        prompt_text += f'{text}\n'
+        # openai ignores prompt length more than 300 tokens
+        prompt_text = (prompt_text + f'{text}\n')[:300]
 
     print()
     print(result_text)
