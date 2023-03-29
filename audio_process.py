@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from glob import glob
 
 from ai import init_openai
@@ -68,6 +69,8 @@ if __name__ == '__main__':
 
     print()
     print(result_text)
+    with open(f'result_text.txt', 'w') as file:
+        file.write(result_text)
 
     summary = get_summary(result_text)
     print('Summary:')

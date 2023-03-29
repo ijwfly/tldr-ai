@@ -63,7 +63,7 @@ def split_file_to_segments(input_file, output_folder, output_file_prefix, min_si
     for i, segment in enumerate(voice_segments):
         start_time_ms, end_time_ms, audio_segment = segment
 
-        if len(segment) < 2000 and audio_segment.dBFS < -34:
+        if len(segment) < 3000 and audio_segment.dBFS < -33:
             # skip short segments with low dBFS
             continue
 
