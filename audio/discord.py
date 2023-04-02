@@ -1,5 +1,6 @@
 import os
 from concurrent.futures import ProcessPoolExecutor
+from typing import List
 
 from audio.process import split_file_to_segments, SegmentInfo
 
@@ -13,7 +14,7 @@ def nickname_from_filename(input_recording_filename):
     return name
 
 
-def split_discord_files(input_files, output_folder):
+def split_discord_files(input_files, output_folder) -> List[SegmentInfo]:
     segment_infos = []
 
     with ProcessPoolExecutor(max_workers=AUDIO_PROCESSING_CONCURRENCY) as executor:

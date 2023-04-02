@@ -32,6 +32,75 @@ def delete_all_files(directory):
     return count
 
 
+# split string to parts of size
+def split_string(string, size):
+    return [string[i:i + size] for i in range(0, len(string), size)]
+
+
+def get_text_buckets(texts, max_bucket_length=2048):
+    buckets = []
+    str_bucket = ''
+    processed_texts = []
+    for line in texts:
+        if len(line) >= max_bucket_length:
+            nickname, *_ = line.split(': ')
+            text = line[len(nickname) + 2:]
+            texts = [f'{nickname}: {text_part}' for text_part in split_string(text, max_bucket_length - len(nickname) - 2)]
+            processed_texts += texts
+        else:
+            processed_texts.append(line)
+
+    for line in processed_texts:
+        if len(str_bucket + line) + 1 >= max_bucket_length and len(str_bucket) != 0:
+            buckets.append(str_bucket)
+            str_bucket = ''
+        str_bucket = line if len(str_bucket) == 0 else str_bucket + '\n' + line
+    return buckets
+
+
+def summarize_down(to_summarize, bucket_max_length=2048, max_summary_length=2000, out_summaries_count=2):
+    """ Split text to bucket_max_length buckets and summarize buckets down to out_summaries_count summaries """
+    while True:
+        summaries = []
+        buckets = get_text_buckets(to_summarize, bucket_max_length)
+        print("\n\nWe have {} buckets".format(len(buckets)))
+        for bucket in buckets:
+            print("-------------------------------")
+            print("Generating summary for bucket: ")
+            print(bucket)
+            summary = get_summary(bucket, max_summary_length)
+            summaries.append(summary)
+        print(summaries)
+        if len(summaries) <= out_summaries_count:
+            break
+        else:
+            to_summarize = summaries
+    return summaries
+
+
+def calculate_segments_length(segment_infos):
+    # calculate length of full recording
+    full_recording_length = 0
+    for segment_info in segment_infos:
+        full_recording_length += segment_info.end_time - segment_info.start_time
+
+    return full_recording_length / 1000  # seconds
+
+
+def filter_hallucinations(texts):
+    result = []
+    for text in texts:
+        processed_text = text.lower().strip()
+
+        if 'игорь негода' in processed_text:
+            continue
+        if any([processed_text.count(letter * 6) > 0 for letter in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя']):
+            continue
+
+        result.append(text)
+    return result
+
+
 if __name__ == '__main__':
     init_openai(OPENAI_API_KEY)
 
@@ -48,34 +117,29 @@ if __name__ == '__main__':
     # sort by start time
     segment_infos = sorted(segment_infos, key=lambda x: x.start_time)
 
-    # calculate length of full recording
-    full_recording_length = 0
-    for segment_info in segment_infos:
-        full_recording_length += segment_info.end_time - segment_info.start_time
-    print(f"Full recording length: {full_recording_length / 1000} seconds")
+    full_recording_length = calculate_segments_length(segment_infos)
     print("Est. transcription cost: $", full_recording_length / 1000 / 60 * 0.006)
 
-    result_text = ''
-    # prompt_text used as prompt to increase accuracy
+    result_texts = []
     prompt_text = f'{RECORDING_CONTEXT}\n' if len(RECORDING_CONTEXT) > 0 else ''
     for segment_info in segment_infos:
         print(f'Processing {segment_info.filename}')
         text = get_audio_speech_to_text(segment_info.filename, prompt_text, RECORDING_LANGUAGE)
         if len(text) == 0:
             continue
-        result_text += f'{segment_info.nickname}: {text}\n'
+        result_texts.append(f'{segment_info.nickname}: {text}\n')
         # openai ignores prompt length more than 300 tokens
         prompt_text = (prompt_text + f'{text}\n')[:300]
 
+    result_texts = filter_hallucinations(result_texts)
+
+    result_text = '\n'.join(result_texts)
     print()
     print(result_text)
     with open(f'result_text.txt', 'w') as file:
         file.write(result_text)
 
-    summary = get_summary(result_text)
-    print('Summary:')
-    print(summary)
+    summaries = summarize_down(result_texts, out_summaries_count=4)
 
-    json_summary = get_json_summary(result_text)
-    print('JSON Summary:')
-    print(json_summary)
+    print('Summary:')
+    print('\n'.join(summaries))
