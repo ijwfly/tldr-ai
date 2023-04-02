@@ -1,12 +1,12 @@
 import os
-from datetime import datetime
 from glob import glob
 
 from ai import init_openai
-from ai.audio import get_audio_speech_to_text
-from ai.completion import get_summary, get_json_summary
+from ai.completion import get_summary
 from audio.discord import split_discord_files
+from audio_transcription.transcribe import transcribe_with_vosk, transcribe_with_openai
 
+AUDIO_INPUT_FORMAT = 'ogg'
 AUDIO_INPUT_FOLDER = 'input_audio/lafleuere-test/'
 AUDIO_OUTPUT_FOLDER = 'temp_output'
 
@@ -55,14 +55,17 @@ def get_text_buckets(texts, max_bucket_length=2048):
             buckets.append(str_bucket)
             str_bucket = ''
         str_bucket = line if len(str_bucket) == 0 else str_bucket + '\n' + line
+    else:
+        if len(str_bucket) != 0:
+            buckets.append(str_bucket)
     return buckets
 
 
-def summarize_down(to_summarize, bucket_max_length=2048, max_summary_length=2000, out_summaries_count=2):
+def summarize_down(to_summarize, max_bucket_length=2048, max_summary_length=2000, out_summaries_count=2):
     """ Split text to bucket_max_length buckets and summarize buckets down to out_summaries_count summaries """
     while True:
         summaries = []
-        buckets = get_text_buckets(to_summarize, bucket_max_length)
+        buckets = get_text_buckets(to_summarize, max_bucket_length)
         print("\n\nWe have {} buckets".format(len(buckets)))
         for bucket in buckets:
             print("-------------------------------")
@@ -70,7 +73,6 @@ def summarize_down(to_summarize, bucket_max_length=2048, max_summary_length=2000
             print(bucket)
             summary = get_summary(bucket, max_summary_length)
             summaries.append(summary)
-        print(summaries)
         if len(summaries) <= out_summaries_count:
             break
         else:
@@ -108,7 +110,10 @@ if __name__ == '__main__':
     if files_removed:
         print(f'Removed {files_removed} files from {AUDIO_OUTPUT_FOLDER} folder')
 
-    input_files = glob(os.path.join(AUDIO_INPUT_FOLDER, '*.ogg'))
+    input_files = glob(os.path.join(AUDIO_INPUT_FOLDER, f'*.{AUDIO_INPUT_FORMAT}'))
+    if len(input_files) == 0:
+        print('No files found')
+        exit(1)
     print('Found files:', len(input_files))
 
     # split files to segments
@@ -118,18 +123,10 @@ if __name__ == '__main__':
     segment_infos = sorted(segment_infos, key=lambda x: x.start_time)
 
     full_recording_length = calculate_segments_length(segment_infos)
-    print("Est. transcription cost: $", full_recording_length / 1000 / 60 * 0.006)
+    print("Est. transcription cost: $", full_recording_length / 60 * 0.006)
 
-    result_texts = []
-    prompt_text = f'{RECORDING_CONTEXT}\n' if len(RECORDING_CONTEXT) > 0 else ''
-    for segment_info in segment_infos:
-        print(f'Processing {segment_info.filename}')
-        text = get_audio_speech_to_text(segment_info.filename, prompt_text, RECORDING_LANGUAGE)
-        if len(text) == 0:
-            continue
-        result_texts.append(f'{segment_info.nickname}: {text}\n')
-        # openai ignores prompt length more than 300 tokens
-        prompt_text = (prompt_text + f'{text}\n')[:300]
+    result_texts = transcribe_with_openai(segment_infos, RECORDING_CONTEXT, RECORDING_LANGUAGE)
+    # result_texts = transcribe_with_vosk(segment_infos, RECORDING_LANGUAGE)
 
     result_texts = filter_hallucinations(result_texts)
 
@@ -139,7 +136,7 @@ if __name__ == '__main__':
     with open(f'result_text.txt', 'w') as file:
         file.write(result_text)
 
-    summaries = summarize_down(result_texts, out_summaries_count=4)
+    summaries = summarize_down(result_texts, max_bucket_length=3000, max_summary_length=1024, out_summaries_count=4)
 
     print('Summary:')
     print('\n'.join(summaries))
